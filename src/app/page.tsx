@@ -9,6 +9,9 @@ import { useToast } from '@/hooks/use-toast';
 import { solveScannedEquations, SolveScannedEquationsOutput } from '@/ai/flows/solve-equations';
 import { Upload, Camera, Calculator, Trash2, Loader2, RotateCw } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import Cropper, { type Area } from 'react-easy-crop';
+import { Slider } from '@/components/ui/slider';
+import getCroppedImg from '@/lib/image-utils';
 
 const simpleEvaluate = (expression: string): number => {
   try {
@@ -24,12 +27,16 @@ const simpleEvaluate = (expression: string): number => {
 };
 
 export default function Home() {
-  const [step, setStep] = useState<'upload' | 'edit' | 'result'>('upload');
+  const [step, setStep] = useState<'upload' | 'crop' | 'result'>('upload');
   const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [ocrResult, setOcrResult] = useState<{ expression: string; result: number | string; } | null>(null);
   const [editableExpression, setEditableExpression] = useState('');
+
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -41,6 +48,9 @@ export default function Home() {
     setIsLoading(false);
     setOcrResult(null);
     setEditableExpression('');
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -53,8 +63,8 @@ export default function Home() {
       reader.onload = (e) => {
         const dataUri = e.target?.result as string;
         setOriginalImage(dataUri);
-        setProcessedImage(dataUri);
-        setStep('edit');
+        setStep('crop');
+        setZoom(1);
       };
       reader.readAsDataURL(file);
     }
@@ -63,15 +73,25 @@ export default function Home() {
   const triggerFileUpload = () => {
     fileInputRef.current?.click();
   };
+  
+  const onCropComplete = useCallback((croppedArea: Area, croppedAreaPixels: Area) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
 
   const handleSolve = useCallback(async () => {
-    if (!originalImage) return;
+    if (!originalImage || !croppedAreaPixels) return;
     setIsLoading(true);
     try {
-      // The flow now automatically enhances the image before solving.
-      const result: SolveScannedEquationsOutput = await solveScannedEquations({ photoDataUri: originalImage });
+      const croppedImage = await getCroppedImg(originalImage, croppedAreaPixels);
+      if (!croppedImage) {
+        toast({ variant: 'destructive', title: 'Cropping Failed', description: 'Could not crop the image.' });
+        setIsLoading(false);
+        return;
+      }
+
+      const result: SolveScannedEquationsOutput = await solveScannedEquations({ photoDataUri: croppedImage });
       
-      setProcessedImage(result.enhancedPhotoDataUri);
+      setProcessedImage(croppedImage);
       setOcrResult(result);
       setEditableExpression(result.expression);
       setStep('result');
@@ -81,7 +101,7 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, [originalImage, toast]);
+  }, [originalImage, croppedAreaPixels, toast]);
   
   const handleRecalculate = useCallback(() => {
     if (!ocrResult) return;
@@ -126,17 +146,76 @@ export default function Home() {
             </Card>
           )}
 
-          {(step === 'edit' || step === 'result') && (
+          {step === 'crop' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
               <div className="space-y-4">
                 <Card className="shadow-xl rounded-xl">
                   <CardHeader>
-                    <CardTitle className="font-headline">Your Image</CardTitle>
+                    <CardTitle className="font-headline">Crop Your Image</CardTitle>
+                    <CardDescription>Adjust the selection to focus on the calculation.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-muted/50">
+                      {originalImage && (
+                        <Cropper
+                          image={originalImage}
+                          crop={crop}
+                          zoom={zoom}
+                          onCropChange={setCrop}
+                          onZoomChange={setZoom}
+                          onCropComplete={onCropComplete}
+                        />
+                      )}
+                    </div>
+                    <div className="space-y-2 mt-4">
+                      <Label htmlFor="zoom" className="font-bold">Zoom</Label>
+                      <Slider
+                        id="zoom"
+                        min={1}
+                        max={3}
+                        step={0.1}
+                        value={[zoom]}
+                        onValueChange={(value) => setZoom(value[0])}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={handleReset} variant="outline">
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Start Over
+                  </Button>
+                  <Button onClick={handleSolve} disabled={isLoading || !croppedAreaPixels} className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold">
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Calculator className="mr-2 h-4 w-4" />}
+                    {isLoading ? 'Calculating...' : 'Crop & Calculate'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-12 md:pt-0">
+                <Card className="shadow-xl rounded-xl bg-muted/30 border-dashed">
+                  <CardHeader>
+                    <CardTitle className="font-headline text-muted-foreground">Calculation Preview</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex items-center justify-center h-64">
+                    <p className="text-muted-foreground">Your result will appear here.</p>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {step === 'result' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+              <div className="space-y-4">
+                <Card className="shadow-xl rounded-xl">
+                  <CardHeader>
+                    <CardTitle className="font-headline">Your Cropped Image</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {processedImage && (
-                      <div className="relative w-full aspect-square rounded-lg overflow-hidden border bg-muted/50">
-                         <Image src={processedImage} alt="Uploaded document with calculations" layout="fill" objectFit="contain" data-ai-hint="handwritten notes" />
+                      <div className="relative w-full aspect-video rounded-lg overflow-hidden border bg-muted/50">
+                         <Image src={processedImage} alt="Cropped document with calculations" layout="fill" objectFit="contain" data-ai-hint="handwritten notes" />
                       </div>
                     )}
                   </CardContent>
@@ -146,14 +225,6 @@ export default function Home() {
                     <Trash2 className="mr-2 h-4 w-4" />
                     Start Over
                   </Button>
-                  {step === 'edit' && (
-                    <>
-                      <Button onClick={handleSolve} disabled={isLoading} className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold">
-                        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Calculator className="mr-2 h-4 w-4" />}
-                        {isLoading ? 'Calculating...' : 'Calculate'}
-                      </Button>
-                    </>
-                  )}
                 </div>
               </div>
 
@@ -168,7 +239,7 @@ export default function Home() {
                     </CardContent>
                   </Card>
                 )}
-                {step === 'result' && ocrResult && (
+                {ocrResult && (
                   <>
                     <Card className="shadow-xl rounded-xl">
                       <CardHeader>
