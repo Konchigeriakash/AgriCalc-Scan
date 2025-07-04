@@ -17,7 +17,6 @@ const EnhanceImageQualityInputSchema = z.object({
     .describe(
       "A photo of a document, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
     ),
-  corners: z.array(z.object({ x: z.number(), y: z.number() })).optional().describe('Four corner points in pixels for perspective cropping.'),
 });
 export type EnhanceImageQualityInput = z.infer<typeof EnhanceImageQualityInputSchema>;
 
@@ -41,14 +40,9 @@ const enhanceImageQualityFlow = ai.defineFlow(
     outputSchema: EnhanceImageQualityOutputSchema,
   },
   async (input) => {
-    const { corners, photoDataUri } = input;
+    const { photoDataUri } = input;
     
-    let textPrompt = 'Enhance this image for OCR accuracy. Improve contrast, sharpen text, and remove shadows.';
-    
-    if (corners && corners.length === 4) {
-      const cornerString = corners.map(c => `(${Math.round(c.x)}, ${Math.round(c.y)})`).join(', ');
-      textPrompt = `Given the four corner coordinates in pixels [${cornerString}], first, perform a perspective crop on the image to select the quadrilateral region defined by these points. Then, apply a perspective transform to flatten the cropped region into a rectangle. Finally, enhance the resulting image quality for optimal Optical Character Recognition (OCR) performance (e.g., increase contrast, sharpen text, remove shadows). Return just the final processed image.`;
-    }
+    const textPrompt = 'Enhance this image for OCR accuracy. Improve contrast, sharpen text, and remove shadows. Return just the final processed image.';
 
     const {media} = await ai.generate({
       model: 'googleai/gemini-2.0-flash-preview-image-generation',

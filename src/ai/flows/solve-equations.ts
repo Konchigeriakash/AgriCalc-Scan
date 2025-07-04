@@ -20,7 +20,6 @@ const SolveScannedEquationsInputSchema = z.object({
     .describe(
       "A photo of numerical data, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
     ),
-    corners: z.array(z.object({ x: z.number(), y: z.number() })).optional().describe('Four corner points for perspective cropping.'),
 });
 export type SolveScannedEquationsInput = z.infer<typeof SolveScannedEquationsInputSchema>;
 
@@ -42,10 +41,9 @@ const solveScannedEquationsFlow = ai.defineFlow(
     outputSchema: SolveScannedEquationsOutputSchema,
   },
   async input => {
-    // 1. Crop (if corners are provided) and enhance the image quality for better OCR results.
+    // 1. Enhance the cropped image quality for better OCR results.
     const { enhancedPhotoDataUri } = await enhanceImageQuality({ 
-      photoDataUri: input.photoDataUri, 
-      corners: input.corners 
+      photoDataUri: input.photoDataUri,
     });
     
     // 2. Extract numbers and operators from the enhanced image using OCR service
