@@ -17,6 +17,7 @@ const EnhanceImageQualityInputSchema = z.object({
     .describe(
       "A photo of a document, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
     ),
+  corners: z.array(z.object({ x: z.number(), y: z.number() })).optional().describe('Four corner points in pixels for perspective cropping.'),
 });
 export type EnhanceImageQualityInput = z.infer<typeof EnhanceImageQualityInputSchema>;
 
@@ -33,36 +34,37 @@ export async function enhanceImageQuality(input: EnhanceImageQualityInput): Prom
   return enhanceImageQualityFlow(input);
 }
 
-const enhanceImageQualityPrompt = ai.definePrompt({
-  name: 'enhanceImageQualityPrompt',
-  input: {schema: EnhanceImageQualityInputSchema},
-  output: {schema: EnhanceImageQualityOutputSchema},
-  prompt: `You are an AI image enhancement tool designed to improve the quality of images for Optical Character Recognition (OCR).
-  Your goal is to take the input image and enhance it so that OCR can more accurately extract text and numbers from it. This may include sharpening the image, increasing contrast, and adjusting brightness.
-  Return the enhanced image as a data URI in the enhancedPhotoDataUri field.
-
-  Original Photo: {{media url=photoDataUri}}
-  Enhanced Photo: {{media url=enhancedPhotoDataUri}}`,
-});
-
 const enhanceImageQualityFlow = ai.defineFlow(
   {
     name: 'enhanceImageQualityFlow',
     inputSchema: EnhanceImageQualityInputSchema,
     outputSchema: EnhanceImageQualityOutputSchema,
   },
-  async input => {
+  async (input) => {
+    const { corners, photoDataUri } = input;
+    
+    let textPrompt = 'Enhance this image for OCR accuracy. Improve contrast, sharpen text, and remove shadows.';
+    
+    if (corners && corners.length === 4) {
+      const cornerString = corners.map(c => `(${Math.round(c.x)}, ${Math.round(c.y)})`).join(', ');
+      textPrompt = `Given the four corner coordinates in pixels [${cornerString}], first, perform a perspective crop on the image to select the quadrilateral region defined by these points. Then, apply a perspective transform to flatten the cropped region into a rectangle. Finally, enhance the resulting image quality for optimal Optical Character Recognition (OCR) performance (e.g., increase contrast, sharpen text, remove shadows). Return just the final processed image.`;
+    }
+
     const {media} = await ai.generate({
       model: 'googleai/gemini-2.0-flash-preview-image-generation',
       prompt: [
-        {media: {url: input.photoDataUri}},
-        {text: 'enhance this image for OCR accuracy'},
+        {media: {url: photoDataUri}},
+        {text: textPrompt},
       ],
       config: {
         responseModalities: ['TEXT', 'IMAGE'],
       },
     });
 
-    return {enhancedPhotoDataUri: media.url!};
+    if (!media?.url) {
+      throw new Error('Image processing failed to return an image.');
+    }
+
+    return {enhancedPhotoDataUri: media.url};
   }
 );

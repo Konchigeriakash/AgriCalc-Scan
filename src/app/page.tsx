@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,9 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { solveScannedEquations, SolveScannedEquationsOutput } from '@/ai/flows/solve-equations';
 import { Upload, Camera, Calculator, Trash2, Loader2, RotateCw } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
-import Cropper, { type Area } from 'react-easy-crop';
-import { Slider } from '@/components/ui/slider';
-import getCroppedImg from '@/lib/image-utils';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const simpleEvaluate = (expression: string): number => {
   try {
@@ -34,9 +32,13 @@ export default function Home() {
   const [ocrResult, setOcrResult] = useState<{ expression: string; result: number | string; } | null>(null);
   const [editableExpression, setEditableExpression] = useState('');
 
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{width: number; height: number} | null>(null);
+  const [corners, setCorners] = useState<{ x: number; y: number }[]>([
+    { x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 },
+    { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 },
+  ]);
+  const [draggingCorner, setDraggingCorner] = useState<number | null>(null);
+  const cropperRef = useRef<HTMLDivElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -48,9 +50,11 @@ export default function Home() {
     setIsLoading(false);
     setOcrResult(null);
     setEditableExpression('');
-    setCrop({ x: 0, y: 0 });
-    setZoom(1);
-    setCroppedAreaPixels(null);
+    setImageDimensions(null);
+    setCorners([
+      { x: 0.1, y: 0.1 }, { x: 0.9, y: 0.1 },
+      { x: 0.9, y: 0.9 }, { x: 0.1, y: 0.9 },
+    ]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -62,9 +66,13 @@ export default function Home() {
       const reader = new FileReader();
       reader.onload = (e) => {
         const dataUri = e.target?.result as string;
-        setOriginalImage(dataUri);
-        setStep('crop');
-        setZoom(1);
+        const img = new window.Image();
+        img.onload = () => {
+          setImageDimensions({ width: img.width, height: img.height });
+          setOriginalImage(dataUri);
+          setStep('crop');
+        };
+        img.src = dataUri;
       };
       reader.readAsDataURL(file);
     }
@@ -74,24 +82,21 @@ export default function Home() {
     fileInputRef.current?.click();
   };
   
-  const onCropComplete = useCallback((croppedArea: Area, croppedAreaPixels: Area) => {
-    setCroppedAreaPixels(croppedAreaPixels);
-  }, []);
-
   const handleSolve = useCallback(async () => {
-    if (!originalImage || !croppedAreaPixels) return;
+    if (!originalImage || !imageDimensions) return;
     setIsLoading(true);
     try {
-      const croppedImage = await getCroppedImg(originalImage, croppedAreaPixels);
-      if (!croppedImage) {
-        toast({ variant: 'destructive', title: 'Cropping Failed', description: 'Could not crop the image.' });
-        setIsLoading(false);
-        return;
-      }
+      const absoluteCorners = corners.map(c => ({
+        x: c.x * imageDimensions.width,
+        y: c.y * imageDimensions.height,
+      }));
 
-      const result: SolveScannedEquationsOutput = await solveScannedEquations({ photoDataUri: croppedImage });
+      const result: SolveScannedEquationsOutput = await solveScannedEquations({ 
+        photoDataUri: originalImage,
+        corners: absoluteCorners,
+      });
       
-      setProcessedImage(croppedImage);
+      setProcessedImage(result.enhancedPhotoDataUri);
       setOcrResult(result);
       setEditableExpression(result.expression);
       setStep('result');
@@ -101,7 +106,48 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, [originalImage, croppedAreaPixels, toast]);
+  }, [originalImage, corners, imageDimensions, toast]);
+
+  const handlePointerDown = (e: React.PointerEvent, index: number) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setDraggingCorner(index);
+  };
+
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    if (draggingCorner === null || !cropperRef.current) return;
+    e.preventDefault();
+    
+    const rect = cropperRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const newX = Math.max(0, Math.min(1, x / rect.width));
+    const newY = Math.max(0, Math.min(1, y / rect.height));
+
+    setCorners(currentCorners => {
+      const newCorners = [...currentCorners];
+      newCorners[draggingCorner] = { x: newX, y: newY };
+      return newCorners;
+    });
+  }, [draggingCorner]);
+
+  const handlePointerUp = useCallback((e: PointerEvent) => {
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    setDraggingCorner(null);
+  }, []);
+
+  useEffect(() => {
+    if (draggingCorner !== null) {
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp);
+    }
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [draggingCorner, handlePointerMove, handlePointerUp]);
+
   
   const handleRecalculate = useCallback(() => {
     if (!ocrResult) return;
@@ -152,31 +198,31 @@ export default function Home() {
                 <Card className="shadow-xl rounded-xl">
                   <CardHeader>
                     <CardTitle className="font-headline">Crop Your Image</CardTitle>
-                    <CardDescription>Adjust the selection to focus on the calculation.</CardDescription>
+                    <CardDescription>Drag the corners to select the calculation area.</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-muted/50">
+                    <div ref={cropperRef} className="relative w-full aspect-video rounded-lg overflow-hidden bg-muted/50 touch-none">
                       {originalImage && (
-                        <Cropper
-                          image={originalImage}
-                          crop={crop}
-                          zoom={zoom}
-                          onCropChange={setCrop}
-                          onZoomChange={setZoom}
-                          onCropComplete={onCropComplete}
-                        />
+                        <>
+                          <Image src={originalImage} layout="fill" objectFit="contain" alt="Document to crop" priority />
+                          <svg className="absolute top-0 left-0 w-full h-full" >
+                            <polygon
+                              points={corners.map(c => `${c.x * 100}% ${c.y * 100}%`).join(' ')}
+                              className="fill-cyan-500/20 stroke-cyan-500 stroke-2"
+                            />
+                            {corners.map((corner, index) => (
+                              <circle
+                                key={index}
+                                cx={`${corner.x * 100}%`}
+                                cy={`${corner.y * 100}%`}
+                                r="10"
+                                className="fill-white stroke-cyan-500 stroke-2 cursor-grab active:cursor-grabbing"
+                                onPointerDown={(e) => handlePointerDown(e, index)}
+                              />
+                            ))}
+                          </svg>
+                        </>
                       )}
-                    </div>
-                    <div className="space-y-2 mt-4">
-                      <Label htmlFor="zoom" className="font-bold">Zoom</Label>
-                      <Slider
-                        id="zoom"
-                        min={1}
-                        max={3}
-                        step={0.1}
-                        value={[zoom]}
-                        onValueChange={(value) => setZoom(value[0])}
-                      />
                     </div>
                   </CardContent>
                 </Card>
@@ -185,7 +231,7 @@ export default function Home() {
                     <Trash2 className="mr-2 h-4 w-4" />
                     Start Over
                   </Button>
-                  <Button onClick={handleSolve} disabled={isLoading || !croppedAreaPixels} className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold">
+                  <Button onClick={handleSolve} disabled={isLoading} className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold">
                     {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Calculator className="mr-2 h-4 w-4" />}
                     {isLoading ? 'Calculating...' : 'Crop & Calculate'}
                   </Button>
