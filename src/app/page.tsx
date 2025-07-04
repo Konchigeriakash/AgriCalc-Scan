@@ -6,9 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { solveScannedEquations } from '@/ai/flows/solve-equations';
-import { enhanceImageQuality } from '@/ai/flows/enhance-image-quality';
-import { Upload, Camera, Wand2, Calculator, Trash2, Loader2, RotateCw } from 'lucide-react';
+import { solveScannedEquations, SolveScannedEquationsOutput } from '@/ai/flows/solve-equations';
+import { Upload, Camera, Calculator, Trash2, Loader2, RotateCw } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 
 const simpleEvaluate = (expression: string): number => {
@@ -29,7 +28,6 @@ export default function Home() {
   const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isEnhancing, setIsEnhancing] = useState(false);
   const [ocrResult, setOcrResult] = useState<{ expression: string; result: number | string; } | null>(null);
   const [editableExpression, setEditableExpression] = useState('');
 
@@ -41,7 +39,6 @@ export default function Home() {
     setOriginalImage(null);
     setProcessedImage(null);
     setIsLoading(false);
-    setIsEnhancing(false);
     setOcrResult(null);
     setEditableExpression('');
     if (fileInputRef.current) {
@@ -67,26 +64,14 @@ export default function Home() {
     fileInputRef.current?.click();
   };
 
-  const handleEnhanceImage = useCallback(async () => {
-    if (!processedImage) return;
-    setIsEnhancing(true);
-    try {
-      const result = await enhanceImageQuality({ photoDataUri: processedImage });
-      setProcessedImage(result.enhancedPhotoDataUri);
-      toast({ title: "Image Enhanced", description: "The image quality has been improved." });
-    } catch (error) {
-      console.error(error);
-      toast({ variant: "destructive", title: "Enhancement Failed", description: "Could not enhance the image." });
-    } finally {
-      setIsEnhancing(false);
-    }
-  }, [processedImage, toast]);
-
   const handleSolve = useCallback(async () => {
-    if (!processedImage) return;
+    if (!originalImage) return;
     setIsLoading(true);
     try {
-      const result = await solveScannedEquations({ photoDataUri: processedImage });
+      // The flow now automatically enhances the image before solving.
+      const result: SolveScannedEquationsOutput = await solveScannedEquations({ photoDataUri: originalImage });
+      
+      setProcessedImage(result.enhancedPhotoDataUri);
       setOcrResult(result);
       setEditableExpression(result.expression);
       setStep('result');
@@ -96,13 +81,14 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, [processedImage, toast]);
+  }, [originalImage, toast]);
   
   const handleRecalculate = useCallback(() => {
     if (!ocrResult) return;
     const newResult = simpleEvaluate(editableExpression);
     const newResultDisplay = isNaN(newResult) ? "Invalid Expression" : newResult;
     setOcrResult({
+      ...ocrResult,
       expression: editableExpression,
       result: newResultDisplay,
     });
@@ -162,10 +148,6 @@ export default function Home() {
                   </Button>
                   {step === 'edit' && (
                     <>
-                      <Button onClick={handleEnhanceImage} disabled={isEnhancing}>
-                        {isEnhancing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
-                        {isEnhancing ? 'Enhancing...' : 'Enhance Image'}
-                      </Button>
                       <Button onClick={handleSolve} disabled={isLoading} className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold">
                         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Calculator className="mr-2 h-4 w-4" />}
                         {isLoading ? 'Calculating...' : 'Calculate'}

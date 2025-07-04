@@ -12,6 +12,7 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import { extractNumbersAndOperators } from '@/services/ocr-service';
 import { evaluateExpression } from '@/services/math-service';
+import { enhanceImageQuality } from './enhance-image-quality';
 
 const SolveScannedEquationsInputSchema = z.object({
   photoDataUri: z
@@ -25,6 +26,7 @@ export type SolveScannedEquationsInput = z.infer<typeof SolveScannedEquationsInp
 const SolveScannedEquationsOutputSchema = z.object({
   expression: z.string().describe('The extracted mathematical expression.'),
   result: z.number().describe('The result of the calculation.'),
+  enhancedPhotoDataUri: z.string().describe('The enhanced photo data URI used for OCR.'),
 });
 export type SolveScannedEquationsOutput = z.infer<typeof SolveScannedEquationsOutputSchema>;
 
@@ -39,8 +41,11 @@ const solveScannedEquationsFlow = ai.defineFlow(
     outputSchema: SolveScannedEquationsOutputSchema,
   },
   async input => {
-    // 1. Extract numbers and operators from the image using OCR service
-    const extractionResult = await extractNumbersAndOperators(input.photoDataUri);
+    // 1. Enhance the image quality for better OCR results.
+    const { enhancedPhotoDataUri } = await enhanceImageQuality({ photoDataUri: input.photoDataUri });
+    
+    // 2. Extract numbers and operators from the enhanced image using OCR service
+    const extractionResult = await extractNumbersAndOperators(enhancedPhotoDataUri);
 
     if (!extractionResult) {
       throw new Error('Could not extract data from the image.');
@@ -52,7 +57,7 @@ const solveScannedEquationsFlow = ai.defineFlow(
       expression: extractedExpression,
     } = extractionResult;
 
-    // 2. If no operators are found, default to addition
+    // 3. If no operators are found, default to addition
     const expression = (operators.length > 0 && extractedExpression) ? extractedExpression : numbers.join(' + ');
 
     // If no expression could be formed, return a default state.
@@ -60,10 +65,11 @@ const solveScannedEquationsFlow = ai.defineFlow(
         return {
             expression: 'No equation found',
             result: 0,
+            enhancedPhotoDataUri: enhancedPhotoDataUri,
         };
     }
 
-    // 3. Evaluate the expression using the math service
+    // 4. Evaluate the expression using the math service
     const evaluationResult = await evaluateExpression(expression);
 
     // Check if the evaluation was successful
@@ -74,12 +80,14 @@ const solveScannedEquationsFlow = ai.defineFlow(
       return {
         expression: expression,
         result: 0,
+        enhancedPhotoDataUri: enhancedPhotoDataUri,
       };
     }
 
     return {
       expression: expression,
       result: evaluationResult.result,
+      enhancedPhotoDataUri: enhancedPhotoDataUri,
     };
   }
 );
