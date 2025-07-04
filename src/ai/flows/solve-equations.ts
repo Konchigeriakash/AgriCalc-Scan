@@ -25,32 +25,12 @@ export type SolveScannedEquationsInput = z.infer<typeof SolveScannedEquationsInp
 const SolveScannedEquationsOutputSchema = z.object({
   expression: z.string().describe('The extracted mathematical expression.'),
   result: z.number().describe('The result of the calculation.'),
-  steps: z.string().describe('The steps taken to solve the expression.'),
 });
 export type SolveScannedEquationsOutput = z.infer<typeof SolveScannedEquationsOutputSchema>;
 
 export async function solveScannedEquations(input: SolveScannedEquationsInput): Promise<SolveScannedEquationsOutput> {
   return solveScannedEquationsFlow(input);
 }
-
-const SolveStepsInputSchema = z.object({
-  expression: z.string().describe('The mathematical expression to solve.'),
-});
-
-const SolveStepsOutputSchema = z.object({
-  steps: z.string().describe('The step-by-step breakdown of the calculation.'),
-});
-
-const solveScannedEquationsPrompt = ai.definePrompt({
-  name: 'solveScannedEquationsPrompt',
-  input: {schema: SolveStepsInputSchema},
-  output: {schema: SolveStepsOutputSchema},
-  prompt: `You are an expert mathematician. Given a mathematical expression, provide a step-by-step breakdown of how to solve it.
-
-Expression: {{{expression}}}
-`,
-});
-
 
 const solveScannedEquationsFlow = ai.defineFlow(
   {
@@ -82,16 +62,9 @@ const solveScannedEquationsFlow = ai.defineFlow(
       throw new Error('Could not evaluate the expression.');
     }
 
-    // 4. Call the prompt to generate a step-by-step breakdown
-    const {output} = await solveScannedEquationsPrompt({
-      expression: expression,
-    });
-
-
     return {
       expression: expression,
       result: evaluationResult.result,
-      steps: output?.steps ?? 'No steps available.',
     };
   }
 );

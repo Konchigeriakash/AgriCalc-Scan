@@ -4,12 +4,12 @@ import { useState, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { solveScannedEquations } from '@/ai/flows/solve-equations';
 import { enhanceImageQuality } from '@/ai/flows/enhance-image-quality';
 import { Upload, Camera, Wand2, Calculator, Trash2, Loader2, RotateCw } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 
 const simpleEvaluate = (expression: string): number => {
   try {
@@ -30,7 +30,7 @@ export default function Home() {
   const [processedImage, setProcessedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
-  const [ocrResult, setOcrResult] = useState<{ expression: string; result: number | string; steps: string; } | null>(null);
+  const [ocrResult, setOcrResult] = useState<{ expression: string; result: number | string; } | null>(null);
   const [editableExpression, setEditableExpression] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,10 +103,8 @@ export default function Home() {
     const newResult = simpleEvaluate(editableExpression);
     const newResultDisplay = isNaN(newResult) ? "Invalid Expression" : newResult;
     setOcrResult({
-      ...ocrResult,
+      expression: editableExpression,
       result: newResultDisplay,
-      steps: "Recalculated based on your edits.",
-      expression: editableExpression
     });
     toast({ title: "Recalculated", description: `New result is ${newResultDisplay}.` });
   }, [editableExpression, ocrResult, toast]);
@@ -197,11 +195,12 @@ export default function Home() {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <Label htmlFor="expression" className="font-bold">Equation</Label>
-                        <Input 
+                        <Textarea 
                           id="expression"
                           value={editableExpression}
                           onChange={(e) => setEditableExpression(e.target.value)}
-                          className="text-lg font-mono h-12"
+                          className="text-lg font-mono break-words"
+                          rows={4}
                         />
                          <Button onClick={handleRecalculate}>
                            <RotateCw className="mr-2 h-4 w-4" />
@@ -216,15 +215,6 @@ export default function Home() {
                       </CardHeader>
                       <CardContent>
                         <p className="text-5xl font-bold font-headline text-primary break-all">{typeof ocrResult.result === 'number' ? ocrResult.result.toLocaleString() : ocrResult.result}</p>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="shadow-xl rounded-xl">
-                      <CardHeader>
-                        <CardTitle className="font-headline">Calculation Steps</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm text-muted-foreground whitespace-pre-wrap font-mono bg-muted/50 p-4 rounded-md">{ocrResult.steps}</p>
                       </CardContent>
                     </Card>
                   </>
