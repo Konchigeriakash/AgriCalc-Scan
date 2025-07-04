@@ -82,3 +82,37 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .react-easy-crop-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    user-select: none;
+    touch-action: none;
+    cursor: move;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .react-easy-crop-img,
+  .react-easy-crop-video {
+    will-change: transform;
+  }
+
+  .react-easy-crop-crop-area {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-sizing: border-box;
+    box-shadow: 0 0 0 9999em;
+    color: rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+  }
+}
