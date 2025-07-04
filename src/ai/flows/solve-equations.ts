@@ -53,13 +53,28 @@ const solveScannedEquationsFlow = ai.defineFlow(
     } = extractionResult;
 
     // 2. If no operators are found, default to addition
-    const expression = operators.length > 0 && extractedExpression ? extractedExpression : numbers.join(' + ');
+    const expression = (operators.length > 0 && extractedExpression) ? extractedExpression : numbers.join(' + ');
+
+    // If no expression could be formed, return a default state.
+    if (!expression.trim()) {
+        return {
+            expression: 'No equation found',
+            result: 0,
+        };
+    }
 
     // 3. Evaluate the expression using the math service
     const evaluationResult = await evaluateExpression(expression);
 
+    // Check if the evaluation was successful
     if (isNaN(evaluationResult.result)) {
-      throw new Error('Could not evaluate the expression.');
+      // If evaluation fails, return the extracted (but invalid) expression
+      // for the user to correct. Provide a default result of 0.
+      // This avoids throwing an error for correctable OCR mistakes.
+      return {
+        expression: expression,
+        result: 0,
+      };
     }
 
     return {

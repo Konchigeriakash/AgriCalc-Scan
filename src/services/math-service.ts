@@ -8,15 +8,19 @@
 
 export async function evaluateExpression(expression: string): Promise<{ result: number }> {
     try {
-        // Sanitize and evaluate the expression
         // Replace common unicode math symbols
-        const sanitizedExpression = expression
+        let sanitizedExpression = expression
             .replace(/×/g, '*')
             .replace(/÷/g, '/');
         
-        // Basic validation to prevent arbitrary code execution
-        if (/[^0-9+\-*/.()\s]/.test(sanitizedExpression)) {
-            console.error("Invalid characters in expression:", sanitizedExpression);
+        // Remove any non-mathematical characters, preserving numbers, operators, dots, parentheses, and spaces.
+        sanitizedExpression = sanitizedExpression.replace(/[^0-9+\-*/.()\s]/g, '');
+
+        // Trim trailing operators to prevent syntax errors on evaluation
+        sanitizedExpression = sanitizedExpression.trim().replace(/[+\-*/.]+$/, '').trim();
+
+        // If after sanitization, the expression is empty, there's nothing to calculate.
+        if (!sanitizedExpression) {
             return { result: NaN };
         }
         
@@ -31,7 +35,7 @@ export async function evaluateExpression(expression: string): Promise<{ result: 
         return { result };
 
     } catch (error) {
-        console.error("Evaluation error:", error);
+        console.error("Evaluation error:", error, "Original expression:", expression);
         return { result: NaN };
     }
 }
